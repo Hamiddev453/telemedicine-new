@@ -20,70 +20,97 @@ const io = new Server(server, {
 
 app.use(cors());
 app.use(express.json());
-app.set('trust proxy', true); // Trust proxy for accurate IP address
-// mount auth routes
-const authRoutes = require('./routes/auth');
-const patientRoutes = require('./routes/patient');
-const doctorRoutes = require('./routes/doctor');
-const consultationRoutes = require('./routes/consultation');
-const notificationRoutes = require('./routes/notification');
-const adminRoutes = require('./routes/admin');
-app.use('/api/auth', authRoutes);
-app.use('/api/patient', patientRoutes);
-app.use('/api/doctor/notifications', notificationRoutes);
-app.use('/api/doctor', doctorRoutes);
-app.use('/api/consultation', consultationRoutes);
-app.use('/api/admin', adminRoutes);
+app.set("trust proxy", true);
+
+// ===================== NEW =====================
+// Home Route
+app.get("/", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "Telemedicine Backend is running successfully!",
+    status: "OK",
+  });
+});
+
+// Health Check Route
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    success: true,
+    database: mongoose.connection.readyState === 1 ? "Connected" : "Disconnected",
+    server: "Running",
+  });
+});
+// ===============================================
+
+// Mount routes
+const authRoutes = require("./routes/auth");
+const patientRoutes = require("./routes/patient");
+const doctorRoutes = require("./routes/doctor");
+const consultationRoutes = require("./routes/consultation");
+const notificationRoutes = require("./routes/notification");
+const adminRoutes = require("./routes/admin");
+
+app.use("/api/auth", authRoutes);
+app.use("/api/patient", patientRoutes);
+app.use("/api/doctor/notifications", notificationRoutes);
+app.use("/api/doctor", doctorRoutes);
+app.use("/api/consultation", consultationRoutes);
+app.use("/api/admin", adminRoutes);
+
+// Connect Database
 connectDb();
 
-// ─── WebRTC Signaling via Socket.IO ────────────────────────────
-const onlineUsers = new Map(); // userId -> socketId
+// ================= WebRTC Signaling =================
+const onlineUsers = new Map();
 
-io.on('connection', (socket) => {
-  console.log('Socket connected:', socket.id);
+io.on("connection", (socket) => {
+  console.log("Socket connected:", socket.id);
 
-  // User registers with their userId
-  socket.on('register', (userId) => {
+  socket.on("register", (userId) => {
     onlineUsers.set(userId, socket.id);
     console.log(`User ${userId} registered with socket ${socket.id}`);
   });
 
-  // Doctor calls a patient — sends offer
-  socket.on('call-user', ({ to, from, signal, callerName, consultationId }) => {
+  socket.on("call-user", ({ to, from, signal, callerName, consultationId }) => {
     const targetSocket = onlineUsers.get(to);
+
     if (targetSocket) {
-      io.to(targetSocket).emit('incoming-call', { from, signal, callerName, consultationId });
+      io.to(targetSocket).emit("incoming-call", {
+        from,
+        signal,
+        callerName,
+        consultationId,
+      });
     } else {
-      socket.emit('user-offline', { userId: to });
+      socket.emit("user-offline", { userId: to });
     }
   });
 
-  // Patient answers — sends back answer signal
-  socket.on('answer-call', ({ to, signal }) => {
+  socket.on("answer-call", ({ to, signal }) => {
     const targetSocket = onlineUsers.get(to);
+
     if (targetSocket) {
-      io.to(targetSocket).emit('call-accepted', { signal });
+      io.to(targetSocket).emit("call-accepted", { signal });
     }
   });
 
-  // Either side ends the call
-  socket.on('end-call', ({ to }) => {
+  socket.on("end-call", ({ to }) => {
     const targetSocket = onlineUsers.get(to);
+
     if (targetSocket) {
-      io.to(targetSocket).emit('call-ended');
+      io.to(targetSocket).emit("call-ended");
     }
   });
 
-  // ICE candidate exchange (for connectivity)
-  socket.on('ice-candidate', ({ to, candidate }) => {
+  socket.on("ice-candidate", ({ to, candidate }) => {
     const targetSocket = onlineUsers.get(to);
+
     if (targetSocket) {
-      io.to(targetSocket).emit('ice-candidate', { candidate });
+      io.to(targetSocket).emit("ice-candidate", { candidate });
     }
   });
 
-  socket.on('disconnect', () => {
-    // Remove user from online map
+  socket.on("disconnect", () => {
     for (const [userId, sockId] of onlineUsers.entries()) {
       if (sockId === socket.id) {
         onlineUsers.delete(userId);
@@ -95,5 +122,5 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`The server is running on the port ${PORT}`);
+  console.log(`The server is running on port ${PORT}`);
 });
